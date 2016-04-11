@@ -40,7 +40,7 @@ func NewListener(address string, parsemsg FuncParseMsg, procmsg FuncProcMsg) *Li
 
 			lis.sessMapMutex.Lock()
 			lis.waitExit.Add(1)
-			sess := NewSession(conn, parsemsg, procmsg, func(con *Session, err error) {
+			sess := NewSession(conn, parsemsg, procmsg, func(con *Session) {
 				lis.sessMapMutex.Lock()
 				delete(lis.sessMap, con.id)
 				lis.waitExit.Done()

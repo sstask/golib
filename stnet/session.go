@@ -2,7 +2,6 @@ package stnet
 
 import (
 	"net"
-	"sync"
 	"sync/atomic"
 )
 
@@ -18,7 +17,7 @@ type SessionMsg struct {
 }
 type FuncProcMsg func(*Session, SessionMsg)
 type FuncParseMsg func(buf []byte) (parsedlen int, msg []byte) //buf:recved data now;parsedlen:length of recved data parsed;msg: message which is parsed from recved data
-type FuncOnClose func(*Session, error)                         //close event
+type FuncOnClose func(*Session)                                //close event
 
 const MsgBuffSize = 1024
 const WriterListLen = 256
@@ -26,11 +25,11 @@ const WriterListLen = 256
 var GlobalSessionID uint64
 
 type Session struct {
-	id         uint64
-	socket     net.Conn
-	writer     chan []byte
-	closer     chan int
-	writeMutex sync.RWMutex
+	id     uint64
+	socket net.Conn
+	writer chan []byte
+	closer chan int
+	wclose chan int
 
 	procmsg  FuncProcMsg
 	parsemsg FuncParseMsg
@@ -46,6 +45,7 @@ func NewSession(con net.Conn, parsemsg FuncParseMsg, procmsg FuncProcMsg, onclos
 		socket:   con,
 		writer:   make(chan []byte, WriterListLen),
 		closer:   make(chan int),
+		wclose:   make(chan int),
 		parsemsg: parsemsg,
 		procmsg:  procmsg,
 		onclose:  onclose,
@@ -60,16 +60,14 @@ func (this *Session) GetID() uint64 {
 }
 
 func (this *Session) Send(data []byte) bool {
-	this.writeMutex.Lock()
-	defer this.writeMutex.Unlock()
-
-	if this.IsClose() {
-		return false
-	}
 	msg := make([]byte, len(data))
 	copy(msg, data)
-	this.writer <- msg
-	return true
+	select {
+	case <-this.closer:
+		return false
+	case this.writer <- msg:
+		return true
+	}
 }
 
 func (this *Session) Close() {
@@ -86,21 +84,23 @@ func (this *Session) IsClose() bool {
 }
 
 func (this *Session) dosend() {
-	issend := true
-	for { //loop until writer chan closed
-		buf, ok := <-this.writer
-		if !ok {
-			break //chan closed
-		}
-		if issend {
+	for {
+		select {
+		case <-this.wclose:
+			goto exitsend
+		case buf, ok := <-this.writer:
+			if !ok {
+				goto exitsend //chan closed
+			}
 			_, err := this.socket.Write(buf)
 			if err != nil {
 				this.socket.Close()
-				issend = false
+				goto exitsend
 			}
 		}
 	}
 
+exitsend:
 	close(this.closer)
 }
 
@@ -118,18 +118,7 @@ func (this *Session) dorecv() {
 		buf := msgbuf[msglen:]
 		n, err := this.socket.Read(buf)
 		if err != nil {
-			this.procmsg(this, SessionMsg{CMD_CLOSE, nil})
-
-			this.writeMutex.Lock()
-			close(this.writer)
-			this.socket.Close()
-			<-this.closer //wait send routine exit
-			this.writeMutex.Unlock()
-
-			if this.onclose != nil {
-				this.onclose(this, err)
-			}
-			break
+			goto exitrecv
 		}
 		msglen += n
 		dellen, msg := this.parsemsg(msgbuf[0:msglen])
@@ -144,5 +133,14 @@ func (this *Session) dorecv() {
 			}
 			msglen -= dellen
 		}
+	}
+
+exitrecv:
+	this.procmsg(this, SessionMsg{CMD_CLOSE, nil})
+	close(this.wclose)
+	this.socket.Close()
+	<-this.closer //wait send routine exit
+	if this.onclose != nil {
+		this.onclose(this)
 	}
 }

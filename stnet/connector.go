@@ -35,7 +35,7 @@ func NewConnector(address string, reconnectmsec int, parsemsg FuncParseMsg, proc
 				continue
 			}
 
-			conn.sess = NewSession(cn, parsemsg, procmsg, func(*Session, error) {
+			conn.sess = NewSession(cn, parsemsg, procmsg, func(*Session) {
 				conn.closeSignal <- 1
 			})
 
@@ -46,7 +46,7 @@ func NewConnector(address string, reconnectmsec int, parsemsg FuncParseMsg, proc
 			if conn.reconnectMSec == 0 {
 				break
 			}
-			time.Sleep(time.Duration(conn.reconnectMSec) * time.Second)
+			time.Sleep(time.Duration(conn.reconnectMSec) * time.Millisecond)
 		}
 		conn.exitSignal <- 1
 	}()
