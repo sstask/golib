@@ -5,39 +5,32 @@ import (
 	"sync/atomic"
 )
 
-const (
-	CMD_NEW int = iota
-	CMD_CLOSE
-	CMD_DATA
-)
+//this will be called when session closed
+type FuncOnClose func(*Session)
 
-type SessionMsg struct {
-	Cmd  int
-	Data []byte
-}
-type FuncProcMsg func(*Session, SessionMsg)
-type FuncParseMsg func(buf []byte) (parsedlen int, msg []byte) //buf:recved data now;parsedlen:length of recved data parsed;msg: message which is parsed from recved data
-type FuncOnClose func(*Session)                                //close event
-
+//message recv buffer size
 const MsgBuffSize = 1024
+
+//the length of send queue
 const WriterListLen = 256
 
+//session id
 var GlobalSessionID uint64
 
 type Session struct {
+	MsgParse
+
 	id     uint64
 	socket net.Conn
 	writer chan []byte
 	closer chan int
 	wclose chan int
 
-	procmsg  FuncProcMsg
-	parsemsg FuncParseMsg
-	onclose  FuncOnClose
+	onclose FuncOnClose
 }
 
-func NewSession(con net.Conn, parsemsg FuncParseMsg, procmsg FuncProcMsg, onclose FuncOnClose) *Session {
-	if parsemsg == nil || procmsg == nil {
+func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) *Session {
+	if msgparse == nil {
 		return nil
 	}
 	sess := &Session{
@@ -46,8 +39,7 @@ func NewSession(con net.Conn, parsemsg FuncParseMsg, procmsg FuncProcMsg, onclos
 		writer:   make(chan []byte, WriterListLen),
 		closer:   make(chan int),
 		wclose:   make(chan int),
-		parsemsg: parsemsg,
-		procmsg:  procmsg,
+		MsgParse: msgparse,
 		onclose:  onclose,
 	}
 	go sess.dosend()
@@ -105,7 +97,7 @@ exitsend:
 }
 
 func (this *Session) dorecv() {
-	this.procmsg(this, SessionMsg{CMD_NEW, nil})
+	this.ProcMsg(this, SessionMsg{CMD_NEW, nil})
 
 	msgbuf := make([]byte, MsgBuffSize)
 	msglen := 0
@@ -121,11 +113,11 @@ func (this *Session) dorecv() {
 			goto exitrecv
 		}
 		msglen += n
-		dellen, msg := this.parsemsg(msgbuf[0:msglen])
+		dellen, msg := this.ParseMsg(msgbuf[0:msglen])
 		if msg != nil {
 			msgcpy := make([]byte, len(msg))
 			copy(msgcpy, msg)
-			this.procmsg(this, SessionMsg{CMD_DATA, msgcpy})
+			this.ProcMsg(this, SessionMsg{CMD_DATA, msgcpy})
 		}
 		if dellen > 0 && dellen <= msglen {
 			if dellen < msglen {
@@ -136,7 +128,7 @@ func (this *Session) dorecv() {
 	}
 
 exitrecv:
-	this.procmsg(this, SessionMsg{CMD_CLOSE, nil})
+	this.ProcMsg(this, SessionMsg{CMD_CLOSE, nil})
 	close(this.wclose)
 	this.socket.Close()
 	<-this.closer //wait send routine exit

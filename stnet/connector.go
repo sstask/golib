@@ -13,10 +13,11 @@ type Connector struct {
 	exitSignal    chan int
 }
 
-func NewConnector(address string, reconnectmsec int, parsemsg FuncParseMsg, procmsg FuncProcMsg) *Connector {
-	if parsemsg == nil || procmsg == nil {
+func NewConnector(address string, reconnectmsec int, msgparse MsgParse) *Connector {
+	if msgparse == nil {
 		return nil
 	}
+
 	conn := &Connector{
 		closeSignal:   make(chan int),
 		exitSignal:    make(chan int),
@@ -35,7 +36,7 @@ func NewConnector(address string, reconnectmsec int, parsemsg FuncParseMsg, proc
 				continue
 			}
 
-			conn.sess = NewSession(cn, parsemsg, procmsg, func(*Session) {
+			conn.sess = NewSession(cn, msgparse, func(*Session) {
 				conn.closeSignal <- 1
 			})
 

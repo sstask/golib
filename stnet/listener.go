@@ -15,8 +15,8 @@ type Listener struct {
 	waitExit     sync.WaitGroup
 }
 
-func NewListener(address string, parsemsg FuncParseMsg, procmsg FuncProcMsg) *Listener {
-	if parsemsg == nil || procmsg == nil {
+func NewListener(address string, msgparse MsgParse) *Listener {
+	if msgparse == nil {
 		return nil
 	}
 
@@ -40,7 +40,7 @@ func NewListener(address string, parsemsg FuncParseMsg, procmsg FuncProcMsg) *Li
 
 			lis.sessMapMutex.Lock()
 			lis.waitExit.Add(1)
-			sess := NewSession(conn, parsemsg, procmsg, func(con *Session) {
+			sess := NewSession(conn, msgparse, func(con *Session) {
 				lis.sessMapMutex.Lock()
 				delete(lis.sessMap, con.id)
 				lis.waitExit.Done()
