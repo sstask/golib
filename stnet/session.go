@@ -3,6 +3,7 @@ package stnet
 import (
 	"net"
 	"sync/atomic"
+	"time"
 )
 
 //this will be called when session closed
@@ -36,7 +37,7 @@ func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) *Session {
 	sess := &Session{
 		id:       atomic.AddUint64(&GlobalSessionID, 1),
 		socket:   con,
-		writer:   make(chan []byte, WriterListLen),
+		writer:   make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
 		closer:   make(chan int),
 		wclose:   make(chan int),
 		MsgParse: msgparse,
@@ -54,11 +55,15 @@ func (this *Session) GetID() uint64 {
 func (this *Session) Send(data []byte) bool {
 	msg := make([]byte, len(data))
 	copy(msg, data)
-	select {
-	case <-this.closer:
-		return false
-	case this.writer <- msg:
-		return true
+	for {
+		select {
+		case <-this.closer:
+			return false
+		case this.writer <- msg:
+			return true
+		case <-time.After(200 * time.Millisecond):
+			break
+		}
 	}
 }
 
