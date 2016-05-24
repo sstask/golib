@@ -3,6 +3,7 @@ package stmysql
 import (
 	"database/sql"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -17,7 +18,7 @@ func GetTableColumns(db *sql.DB, table string) ([]string, error) {
 	return rows.Columns()
 }
 
-func newtable(tcfg *dbTable) []string {
+func newTable(tcfg *dbTable) []string {
 
 	newstr := "CREATE TABLE " + tcfg.name + "(\n"
 	isfirst := true
@@ -63,8 +64,8 @@ ALTER TABLE table_name DROP column_name1, DROP column_name2;
 Postgre SQL
 ALTER TABLE table_name DROP COLUMN column_name1, DROP COLUMN column_name2;
 */
-func CheckTable(db *sql.DB, table string) ([]string, error) {
-	tcfg, ok := TableCfgName[table]
+func checkTable(db *sql.DB, table string) ([]string, error) {
+	tcfg, ok := tableCfgName[table]
 	if !ok {
 		return nil, fmt.Errorf("table[%s] have not add in cfg", table)
 	}
@@ -79,7 +80,7 @@ func CheckTable(db *sql.DB, table string) ([]string, error) {
 			if !tcfg.export {
 				return nil, nil
 			}
-			return newtable(&tcfg), nil
+			return newTable(&tcfg), nil
 		}
 	} else if !tcfg.export { //drop table
 		newstr := "DROP TABLE " + tcfg.name
@@ -150,8 +151,8 @@ func CheckTable(db *sql.DB, table string) ([]string, error) {
 	}
 }
 
-func UpdateTable(db *sql.DB, table string) ([]string, error) {
-	sqlstrs, err := CheckTable(db, table)
+func updateTable(db *sql.DB, table string) ([]string, error) {
+	sqlstrs, err := checkTable(db, table)
 	if err != nil {
 		return nil, err
 	}
@@ -164,4 +165,32 @@ func UpdateTable(db *sql.DB, table string) ([]string, error) {
 		}
 	}
 	return cmds, nil
+}
+
+func CheckTableEx(db *sql.DB, table interface{}) ([]string, error) {
+	if reflect.TypeOf(table).Kind() == reflect.String {
+		return checkTable(db, table.(string))
+	}
+	if t, has := tableCfgType[reflect.TypeOf(table)]; has {
+		return checkTable(db, t.name)
+	}
+	tlname, err := addTable(table)
+	if err != nil {
+		return nil, err
+	}
+	return checkTable(db, tlname)
+}
+
+func UpdateTableEx(db *sql.DB, table interface{}) ([]string, error) {
+	if reflect.TypeOf(table).Kind() == reflect.String {
+		return updateTable(db, table.(string))
+	}
+	if t, has := tableCfgType[reflect.TypeOf(table)]; has {
+		return updateTable(db, t.name)
+	}
+	tlname, err := addTable(table)
+	if err != nil {
+		return nil, err
+	}
+	return updateTable(db, tlname)
 }

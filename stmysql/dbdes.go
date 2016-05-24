@@ -30,20 +30,23 @@ type dbTable struct {
 	columns    map[string]dbColumn
 }
 
-var TableCfgType map[reflect.Type]dbTable = make(map[reflect.Type]dbTable)
-var TableCfgName map[string]dbTable = make(map[string]dbTable)
+var tableCfgType map[reflect.Type]dbTable = make(map[reflect.Type]dbTable)
+var tableCfgName map[string]dbTable = make(map[string]dbTable)
 
-func AddTable(table interface{}) error {
+func addTable(table interface{}) (string, error) {
 	types := reflect.TypeOf(table)
 	if types.Kind() != reflect.Struct {
-		return errors.New("table should be a struct")
+		return "", errors.New("table should be a struct")
+	}
+	if _, has := tableCfgType[types]; has {
+		return types.Name(), errors.New("table have be added")
 	}
 	tbcfg := dbTable{
 		name:     types.Name(),
 		typ:      types,
 		export:   true,
-		engine:   MysqlCfg["engine"],
-		charset:  MysqlCfg["charset"],
+		engine:   mysqlCfg["engine"],
+		charset:  mysqlCfg["charset"],
 		autoinci: 1,
 		index:    make([]string, 0, 3),
 		columns:  make(map[string]dbColumn),
@@ -72,12 +75,12 @@ func AddTable(table interface{}) error {
 			}
 		}
 		if colcfg.typ == "" {
-			if v, ok := DBColumnType[types.Field(i).Type]; ok {
+			if v, ok := dbColumnType[types.Field(i).Type]; ok {
 				colcfg.typ = v
 			} else {
 				other, ok := reflect.TypeOf(globalDBCfg{}).FieldByName("st_others")
 				if ok {
-					colcfg.typ = DBColumnType[other.Type]
+					colcfg.typ = dbColumnType[other.Type]
 				}
 			}
 		}
@@ -106,7 +109,7 @@ func AddTable(table interface{}) error {
 			if strings.HasPrefix(keys, "primary") {
 				keys = keys[len("primary"):]
 				if keys == "" || keys[0] != '(' {
-					return fmt.Errorf("table[%s] primary format error key:[%s]", types.Name(), val.Get("key"))
+					return tbcfg.name, fmt.Errorf("table[%s] primary format error key:[%s]", types.Name(), val.Get("key"))
 				}
 				pos := 0
 				for ; pos < len(keys); pos++ {
@@ -115,7 +118,7 @@ func AddTable(table interface{}) error {
 					}
 				}
 				if keys[pos] != ')' {
-					return fmt.Errorf("table[%s] primary format error key:[%s]", types.Name(), val.Get("key"))
+					return tbcfg.name, fmt.Errorf("table[%s] primary format error key:[%s]", types.Name(), val.Get("key"))
 				}
 				tbcfg.primarykey = keys[:pos+1]
 				if len(keys) > pos+2 {
@@ -125,7 +128,7 @@ func AddTable(table interface{}) error {
 			for strings.HasPrefix(keys, "index") {
 				keys = keys[len("index"):]
 				if keys == "" || keys[0] != '(' {
-					return fmt.Errorf("table[%s] index format error key:[%s]", types.Name(), val.Get("key"))
+					return tbcfg.name, fmt.Errorf("table[%s] index format error key:[%s]", types.Name(), val.Get("key"))
 				}
 				pos := 0
 				for ; pos < len(keys); pos++ {
@@ -134,7 +137,7 @@ func AddTable(table interface{}) error {
 					}
 				}
 				if keys[pos] != ')' {
-					return fmt.Errorf("table[%s] index format error key:[%s]", types.Name(), val.Get("key"))
+					return tbcfg.name, fmt.Errorf("table[%s] index format error key:[%s]", types.Name(), val.Get("key"))
 				}
 				tbcfg.index = append(tbcfg.index, keys[:pos+1])
 				if len(keys) > pos+2 {
@@ -152,7 +155,7 @@ func AddTable(table interface{}) error {
 			if len(res) >= 2 {
 				i, e := strconv.Atoi(res[1])
 				if e != nil {
-					return e
+					return tbcfg.name, e
 				}
 				tbcfg.autoinci = uint32(i)
 			}
@@ -164,10 +167,10 @@ func AddTable(table interface{}) error {
 			v.autoinc = true
 			tbcfg.columns[tbcfg.autoincc] = v
 		} else {
-			return fmt.Errorf("table[%s] autoinc format error autoinc:[%s]", tbcfg.name, tbcfg.autoincc)
+			return tbcfg.name, fmt.Errorf("table[%s] autoinc format error autoinc:[%s]", tbcfg.name, tbcfg.autoincc)
 		}
 	}
-	TableCfgType[tbcfg.typ] = tbcfg
-	TableCfgName[tbcfg.name] = tbcfg
-	return nil
+	tableCfgType[tbcfg.typ] = tbcfg
+	tableCfgName[tbcfg.name] = tbcfg
+	return tbcfg.name, nil
 }
