@@ -31,8 +31,119 @@ func readRows(rows *sql.Rows, ttype reflect.Type) ([]interface{}, error) {
 	return readCols, nil
 }
 
-func SelectOne(db *sql.DB, data interface{}, args ...interface{}) (int, error) {
-	types := reflect.TypeOf(data)
+func replaceORinsertOne(db *sql.DB, table interface{}, cmd string) (sql.Result, error) {
+	types := reflect.TypeOf(table)
+	if types.Kind() != reflect.Ptr && types.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("you should give a struct or a ptr of a struct")
+	}
+	if types.Kind() == reflect.Ptr && types.Elem().Kind() != reflect.Struct {
+		return nil, fmt.Errorf("you should give a struct or a ptr of a struct")
+	}
+	rltype := types
+	tbVal := reflect.ValueOf(table)
+	if types.Kind() == reflect.Ptr {
+		rltype = types.Elem()
+		tbVal = tbVal.Elem()
+	}
+	if _, has := tableCfgType[rltype]; !has {
+		_, err := addTable(table)
+		if err != nil {
+			return nil, err
+		}
+	}
+	tbcfg, _ := tableCfgType[rltype]
+	insertVals := make([]interface{}, 0, len(tbcfg.columns))
+	sqlcmd := cmd + " into " + tbcfg.name + " ("
+	sqlval := " values ("
+	isfirst := true
+	for _, v := range tbcfg.columns {
+		if !v.export || v.autoinc {
+			continue
+		}
+		if !isfirst {
+			sqlcmd += ","
+			sqlval += ","
+		}
+		sqlcmd += " " + v.name
+		sqlval += " ?"
+		isfirst = false
+
+		insertVals = append(insertVals, tbVal.FieldByName(v.name).Interface())
+	}
+	sqlcmd += ") " + sqlval + ")"
+
+	res, err := db.Exec(sqlcmd, insertVals...)
+	return res, err
+}
+
+func replaceORinsertBatch(db *sql.DB, table interface{}, cmd string) (sql.Result, error) {
+	types := reflect.TypeOf(table)
+	if types.Kind() != reflect.Slice {
+		return nil, fmt.Errorf("you should give a slice of a struct")
+	}
+	sliceval := reflect.ValueOf(table)
+	if sliceval.Len() == 0 {
+		return nil, nil
+	}
+	rltype := reflect.TypeOf(sliceval.Index(0).Interface())
+	if rltype.Kind() == reflect.Ptr {
+		rltype = rltype.Elem()
+	}
+	if _, has := tableCfgType[rltype]; !has {
+		_, err := addTable(sliceval.Index(0).Interface())
+		if err != nil {
+			return nil, err
+		}
+	}
+	tbcfg, _ := tableCfgType[rltype]
+	insertVals := make([]interface{}, 0, len(tbcfg.columns)*sliceval.Len())
+	insertCols := make([]string, 0, len(tbcfg.columns))
+	sqlcmd := cmd + " into " + tbcfg.name + " ("
+	isfirst := true
+	for _, v := range tbcfg.columns {
+		if !v.export || v.autoinc {
+			continue
+		}
+		if !isfirst {
+			sqlcmd += ","
+		}
+		sqlcmd += " " + v.name
+		insertCols = append(insertCols, v.name)
+		isfirst = false
+	}
+	sqlcmd += ") "
+
+	sqlval := " values"
+	isfirst = true
+	for i := 0; i < sliceval.Len(); i++ {
+		if !isfirst {
+			sqlval += ","
+		}
+		sqlval += "("
+		tbVal := reflect.ValueOf(sliceval.Index(i).Interface())
+		if tbVal.Kind() == reflect.Ptr {
+			tbVal = tbVal.Elem()
+		}
+		isf := true
+		for _, v := range insertCols {
+			if !isf {
+				sqlval += ","
+			}
+			sqlval += " ?"
+			isf = false
+			insertVals = append(insertVals, tbVal.FieldByName(v).Interface())
+		}
+		sqlval += ")"
+		isfirst = false
+	}
+
+	sqlcmd += sqlval
+	res, err := db.Exec(sqlcmd, insertVals...)
+	return res, err
+}
+
+func SelectOne(db *sql.DB, table interface{}, args ...interface{}) (int, error) {
+	types := reflect.TypeOf(table)
 	if types.Kind() != reflect.Ptr || types.Elem().Kind() != reflect.Struct {
 		return 0, fmt.Errorf("[%s] you should give a ptr of a struct", types.Name())
 	}
@@ -62,14 +173,14 @@ func SelectOne(db *sql.DB, data interface{}, args ...interface{}) (int, error) {
 
 	cols, er := readRows(rows, rltype)
 	if len(cols) > 0 {
-		reflect.ValueOf(data).Elem().Set(reflect.ValueOf(cols[0]).Elem())
+		reflect.ValueOf(table).Elem().Set(reflect.ValueOf(cols[0]).Elem())
 	}
 
 	return len(cols), er
 }
 
-func SelectAll(db *sql.DB, data interface{}, args ...interface{}) ([]interface{}, error) {
-	types := reflect.TypeOf(data)
+func SelectAll(db *sql.DB, table interface{}, args ...interface{}) ([]interface{}, error) {
+	types := reflect.TypeOf(table)
 	if types.Kind() != reflect.Ptr && types.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("[%s] you should give astruct or a ptr of a struct", types.Name())
 	}
@@ -105,4 +216,141 @@ func SelectAll(db *sql.DB, data interface{}, args ...interface{}) ([]interface{}
 	defer rows.Close()
 
 	return readRows(rows, rltype)
+}
+
+func GetRecordCount(db *sql.DB, table interface{}, args ...interface{}) (int, error) {
+	tbname := ""
+	ttype := reflect.TypeOf(table)
+	if ttype.Kind() == reflect.String {
+		tbname = table.(string)
+	} else if ttype.Kind() == reflect.Struct {
+		tbname = ttype.Name()
+	} else if ttype.Kind() == reflect.Ptr && ttype.Elem().Kind() == reflect.Struct {
+		tbname = ttype.Elem().Name()
+	} else {
+		return 0, fmt.Errorf("you should give a string or a struct or a ptr of struct")
+	}
+	sqlcmd := "select count(*) as num from " + tbname
+
+	if len(args) > 0 {
+		if reflect.TypeOf(args[0]).Kind() != reflect.String {
+			return 0, fmt.Errorf("args[0] should is a string")
+		}
+		sqlcmd += " " + args[0].(string)
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if len(args) > 1 {
+		rows, err = db.Query(sqlcmd, args[1:]...)
+	} else {
+		rows, err = db.Query(sqlcmd)
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		num := 0
+		err = rows.Scan(&num)
+		if err != nil {
+			return 0, err
+		}
+		return num, nil
+	}
+	return 0, nil
+}
+
+func GetRecordMax(db *sql.DB, table interface{}, column string, args ...interface{}) (int, error) {
+	tbname := ""
+	ttype := reflect.TypeOf(table)
+	if ttype.Kind() == reflect.String {
+		tbname = table.(string)
+	} else if ttype.Kind() == reflect.Struct {
+		tbname = ttype.Name()
+	} else if ttype.Kind() == reflect.Ptr && ttype.Elem().Kind() == reflect.Struct {
+		tbname = ttype.Elem().Name()
+	} else {
+		return 0, fmt.Errorf("you should give a string or a struct as table")
+	}
+	sqlcmd := "select " + column + " as c from " + tbname
+
+	if len(args) > 0 {
+		if reflect.TypeOf(args[0]).Kind() != reflect.String {
+			return 0, fmt.Errorf("args[0] should is a string")
+		}
+		sqlcmd += " " + args[0].(string)
+	}
+	sqlcmd += " order by c desc limit 1"
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if len(args) > 1 {
+		rows, err = db.Query(sqlcmd, args[1:]...)
+	} else {
+		rows, err = db.Query(sqlcmd)
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		max := 0
+		err = rows.Scan(&max)
+		if err != nil {
+			return 0, err
+		}
+		return max, nil
+	}
+	return 0, nil
+}
+
+func InsertOne(db *sql.DB, table interface{}) (sql.Result, error) {
+	return replaceORinsertOne(db, table, "insert")
+}
+
+func InsertBatch(db *sql.DB, table interface{}) (sql.Result, error) {
+	return replaceORinsertBatch(db, table, "insert")
+}
+
+func ReplaceOne(db *sql.DB, table interface{}) (sql.Result, error) {
+	return replaceORinsertOne(db, table, "replace")
+}
+
+func ReplaceBatch(db *sql.DB, table interface{}) (sql.Result, error) {
+	return replaceORinsertBatch(db, table, "replace")
+}
+
+func DeleteRecord(db *sql.DB, table interface{}, args ...interface{}) (sql.Result, error) {
+	tbname := ""
+	ttype := reflect.TypeOf(table)
+	if ttype.Kind() == reflect.String {
+		tbname = table.(string)
+	} else if ttype.Kind() == reflect.Struct {
+		tbname = ttype.Name()
+	} else if ttype.Kind() == reflect.Ptr && ttype.Elem().Kind() == reflect.Struct {
+		tbname = ttype.Elem().Name()
+	} else {
+		return nil, fmt.Errorf("you should give a string or a struct or a ptr of struct")
+	}
+	sqlcmd := "delete from " + tbname
+
+	if len(args) > 0 {
+		if reflect.TypeOf(args[0]).Kind() != reflect.String {
+			return nil, fmt.Errorf("args[0] should is a string")
+		}
+		sqlcmd += " " + args[0].(string)
+	}
+
+	if len(args) > 1 {
+		return db.Exec(sqlcmd, args[1:]...)
+	} else {
+		return db.Exec(sqlcmd)
+	}
 }
