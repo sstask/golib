@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+//mysql config
+//go's types mapping mysql's types
 type globalDBCfg struct {
 	mysql string `engine:"InnoDB" charset:"utf8"`
 
@@ -25,12 +27,33 @@ type globalDBCfg struct {
 	st_others interface{} `type:"BLOB(65535)"`
 }
 
+//types that can be stored in database immediately;
+//others will be encoded to []byte firstly,then be stored into database;
+type typesNotNeedEncode struct {
+	st_bool   bool
+	st_int    int
+	st_uint   uint
+	st_int8   int8
+	st_uint8  uint8
+	st_int32  int32
+	st_uint32 uint32
+	st_int64  int64
+	st_uint64 uint64
+	st_float  float32
+	st_double float64
+	st_string string
+	st_bytes  []byte
+	st_time   time.Time
+}
+
 var mysqlCfg map[string]string
 var dbColumnType map[reflect.Type]string
+var notEncodeTypes map[reflect.Type]int
 
 func init() {
 	mysqlCfg = make(map[string]string)
 	dbColumnType = make(map[reflect.Type]string)
+	notEncodeTypes = make(map[reflect.Type]int)
 
 	types := reflect.TypeOf(globalDBCfg{})
 	glcfg, ok := types.FieldByName("mysql")
@@ -44,5 +67,10 @@ func init() {
 		if val != "" {
 			dbColumnType[types.Field(i).Type] = val
 		}
+	}
+
+	encTypes := reflect.TypeOf(typesNotNeedEncode{})
+	for i := 0; i < encTypes.NumField(); i++ {
+		notEncodeTypes[encTypes.Field(i).Type] = 1
 	}
 }

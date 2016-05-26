@@ -11,11 +11,19 @@ func readRows(rows *sql.Rows, ttype reflect.Type) ([]interface{}, error) {
 	readCols := make([]interface{}, 0)
 	for rows.Next() {
 		colval := reflect.New(ttype).Interface()
+		structval := make(map[string]*[]byte)
 		vals := reflect.ValueOf(colval).Elem()
 		rets := make([]interface{}, 0, len(cols))
 		for _, v := range cols {
 			if f, ok := vals.Type().FieldByName(v); ok {
-				rets = append(rets, vals.FieldByIndex(f.Index).Addr().Interface())
+				val := vals.FieldByIndex(f.Index)
+				if _, has := notEncodeTypes[reflect.TypeOf(val.Interface())]; !has {
+					sli := make([]byte, 0)
+					structval[v] = &sli
+					rets = append(rets, &sli)
+				} else {
+					rets = append(rets, val.Addr().Interface())
+				}
 			} else {
 				var i interface{}
 				rets = append(rets, &i)
@@ -25,10 +33,31 @@ func readRows(rows *sql.Rows, ttype reflect.Type) ([]interface{}, error) {
 		if err != nil {
 			return readCols, err
 		}
+		for k, v := range structval {
+			if f, ok := vals.Type().FieldByName(k); ok {
+				val := vals.FieldByIndex(f.Index)
+				err = unmarshal(*v, val.Addr().Interface())
+				if err != nil {
+					return readCols, err
+				}
+			}
+		}
 		readCols = append(readCols, colval)
 	}
 
 	return readCols, nil
+}
+
+func insertVal(slice []interface{}, val reflect.Value) ([]interface{}, error) {
+	v := val.Interface()
+	if _, has := notEncodeTypes[reflect.TypeOf(v)]; !has {
+		m, err := marshal(v)
+		if err != nil {
+			return slice, err
+		}
+		return append(slice, m), nil
+	}
+	return append(slice, v), nil
 }
 
 func replaceORinsertOne(db *sql.DB, table interface{}, cmd string) (sql.Result, error) {
@@ -68,12 +97,15 @@ func replaceORinsertOne(db *sql.DB, table interface{}, cmd string) (sql.Result, 
 		sqlval += " ?"
 		isfirst = false
 
-		insertVals = append(insertVals, tbVal.FieldByName(v.name).Interface())
+		var err error
+		insertVals, err = insertVal(insertVals, tbVal.FieldByName(v.name))
+		if err != nil {
+			return nil, nil
+		}
 	}
 	sqlcmd += ") " + sqlval + ")"
 
-	res, err := db.Exec(sqlcmd, insertVals...)
-	return res, err
+	return db.Exec(sqlcmd, insertVals...)
 }
 
 func replaceORinsertBatch(db *sql.DB, table interface{}, cmd string) (sql.Result, error) {
@@ -131,7 +163,11 @@ func replaceORinsertBatch(db *sql.DB, table interface{}, cmd string) (sql.Result
 			}
 			sqlval += " ?"
 			isf = false
-			insertVals = append(insertVals, tbVal.FieldByName(v).Interface())
+			var err error
+			insertVals, err = insertVal(insertVals, tbVal.FieldByName(v))
+			if err != nil {
+				return nil, nil
+			}
 		}
 		sqlval += ")"
 		isfirst = false
