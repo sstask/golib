@@ -181,13 +181,13 @@ func replaceORinsertBatch(db *sql.DB, table interface{}, cmd string) (sql.Result
 func SelectOne(db *sql.DB, table interface{}, args ...interface{}) (int, error) {
 	types := reflect.TypeOf(table)
 	if types.Kind() != reflect.Ptr || types.Elem().Kind() != reflect.Struct {
-		return 0, fmt.Errorf("[%s] you should give a ptr of a struct", types.Name())
+		return 0, fmt.Errorf("you should give a ptr of a struct")
 	}
 	rltype := types.Elem()
 	sqlcmd := "select * from " + rltype.Name()
 	if len(args) > 0 {
 		if reflect.TypeOf(args[0]).Kind() != reflect.String {
-			return 0, fmt.Errorf("[%s] args[0] should is a string", rltype.Name())
+			return 0, fmt.Errorf("args[0] should is a string")
 		}
 		sqlcmd += " " + args[0].(string)
 	}
@@ -218,10 +218,10 @@ func SelectOne(db *sql.DB, table interface{}, args ...interface{}) (int, error) 
 func SelectAll(db *sql.DB, table interface{}, args ...interface{}) ([]interface{}, error) {
 	types := reflect.TypeOf(table)
 	if types.Kind() != reflect.Ptr && types.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("[%s] you should give astruct or a ptr of a struct", types.Name())
+		return nil, fmt.Errorf("you should give a struct or a ptr of a struct")
 	}
 	if types.Kind() == reflect.Ptr && types.Elem().Kind() != reflect.Struct {
-		return nil, fmt.Errorf("[%s] you should give astruct or a ptr of a struct", types.Name())
+		return nil, fmt.Errorf("you should give a struct or a ptr of a struct")
 	}
 	var rltype reflect.Type
 	if types.Kind() == reflect.Struct {
@@ -232,7 +232,7 @@ func SelectAll(db *sql.DB, table interface{}, args ...interface{}) ([]interface{
 	sqlcmd := "select * from " + rltype.Name()
 	if len(args) > 0 {
 		if reflect.TypeOf(args[0]).Kind() != reflect.String {
-			return nil, fmt.Errorf("[%s] args[0] should is a slice", rltype.Name())
+			return nil, fmt.Errorf("args[0] should is a slice")
 		}
 		sqlcmd += " " + args[0].(string)
 	}
