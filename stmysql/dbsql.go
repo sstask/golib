@@ -36,9 +36,13 @@ func readRows(rows *sql.Rows, ttype reflect.Type) ([]interface{}, error) {
 		for k, v := range structval {
 			if f, ok := vals.Type().FieldByName(k); ok {
 				val := vals.FieldByIndex(f.Index)
-				err = unmarshal(*v, val.Addr().Interface())
-				if err != nil {
-					return readCols, err
+				if len(*v) > 0 {
+					err = unmarshal(*v, val.Addr().Interface())
+					if err != nil {
+						return readCols, err
+					}
+				} else {
+					val = reflect.Zero(val.Type())
 				}
 			}
 		}
@@ -100,7 +104,7 @@ func replaceORinsertOne(db *sql.DB, table interface{}, cmd string) (sql.Result, 
 		var err error
 		insertVals, err = insertVal(insertVals, tbVal.FieldByName(v.name))
 		if err != nil {
-			return nil, nil
+			return nil, err
 		}
 	}
 	sqlcmd += ") " + sqlval + ")"
