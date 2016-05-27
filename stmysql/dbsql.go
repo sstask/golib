@@ -6,13 +6,19 @@ import (
 	"reflect"
 )
 
+//read the rows's content to a slice of struct pointers
+//rows:mysql query result ttype:struct type
 func readRows(rows *sql.Rows, ttype reflect.Type) ([]interface{}, error) {
 	cols, _ := rows.Columns()
 	readCols := make([]interface{}, 0)
 	for rows.Next() {
+		//new a struct
 		colval := reflect.New(ttype).Interface()
+		//[]byte save the encoded conent of the struct's special member
 		structval := make(map[string]*[]byte)
+		//struct's value
 		vals := reflect.ValueOf(colval).Elem()
+		//save the address of the struct's member
 		rets := make([]interface{}, 0, len(cols))
 		for _, v := range cols {
 			if f, ok := vals.Type().FieldByName(v); ok {
@@ -33,6 +39,7 @@ func readRows(rows *sql.Rows, ttype reflect.Type) ([]interface{}, error) {
 		if err != nil {
 			return readCols, err
 		}
+		//unmarshal the encoded members
 		for k, v := range structval {
 			if f, ok := vals.Type().FieldByName(k); ok {
 				val := vals.FieldByIndex(f.Index)
@@ -52,6 +59,7 @@ func readRows(rows *sql.Rows, ttype reflect.Type) ([]interface{}, error) {
 	return readCols, nil
 }
 
+//put the member of the struct into a slice(some need to encode)
 func insertVal(slice []interface{}, val reflect.Value) ([]interface{}, error) {
 	v := val.Interface()
 	if _, has := notEncodeTypes[reflect.TypeOf(v)]; !has {
@@ -64,6 +72,7 @@ func insertVal(slice []interface{}, val reflect.Value) ([]interface{}, error) {
 	return append(slice, v), nil
 }
 
+//replace or insert a struct into db
 func replaceORinsertOne(db *sql.DB, table interface{}, cmd string) (sql.Result, error) {
 	types := reflect.TypeOf(table)
 	if types.Kind() != reflect.Ptr && types.Kind() != reflect.Struct {
@@ -72,12 +81,14 @@ func replaceORinsertOne(db *sql.DB, table interface{}, cmd string) (sql.Result, 
 	if types.Kind() == reflect.Ptr && types.Elem().Kind() != reflect.Struct {
 		return nil, fmt.Errorf("you should give a struct or a ptr of a struct")
 	}
+	//rltype:the type of the struct tbVal:the value of the struct
 	rltype := types
 	tbVal := reflect.ValueOf(table)
 	if types.Kind() == reflect.Ptr {
 		rltype = types.Elem()
 		tbVal = tbVal.Elem()
 	}
+	//read table config
 	if _, has := tableCfgType[rltype]; !has {
 		_, err := addTable(table)
 		if err != nil {
@@ -112,6 +123,7 @@ func replaceORinsertOne(db *sql.DB, table interface{}, cmd string) (sql.Result, 
 	return db.Exec(sqlcmd, insertVals...)
 }
 
+//replace or insert a slice of structs into db
 func replaceORinsertBatch(db *sql.DB, table interface{}, cmd string) (sql.Result, error) {
 	types := reflect.TypeOf(table)
 	if types.Kind() != reflect.Slice {
@@ -121,6 +133,7 @@ func replaceORinsertBatch(db *sql.DB, table interface{}, cmd string) (sql.Result
 	if sliceval.Len() == 0 {
 		return nil, nil
 	}
+	//rltype:the type of the struct
 	rltype := reflect.TypeOf(sliceval.Index(0).Interface())
 	if rltype.Kind() == reflect.Ptr {
 		rltype = rltype.Elem()
@@ -170,7 +183,7 @@ func replaceORinsertBatch(db *sql.DB, table interface{}, cmd string) (sql.Result
 			var err error
 			insertVals, err = insertVal(insertVals, tbVal.FieldByName(v))
 			if err != nil {
-				return nil, nil
+				return nil, err
 			}
 		}
 		sqlval += ")"
@@ -182,6 +195,7 @@ func replaceORinsertBatch(db *sql.DB, table interface{}, cmd string) (sql.Result
 	return res, err
 }
 
+//select only one record from db,the result will be saved into "table" para
 func SelectOne(db *sql.DB, table interface{}, args ...interface{}) (int, error) {
 	types := reflect.TypeOf(table)
 	if types.Kind() != reflect.Ptr || types.Elem().Kind() != reflect.Struct {
@@ -219,6 +233,8 @@ func SelectOne(db *sql.DB, table interface{}, args ...interface{}) (int, error) 
 	return len(cols), er
 }
 
+//select all records which is up to the conditions
+//return a slice of ptr of "table" struct
 func SelectAll(db *sql.DB, table interface{}, args ...interface{}) ([]interface{}, error) {
 	types := reflect.TypeOf(table)
 	if types.Kind() != reflect.Ptr && types.Kind() != reflect.Struct {
@@ -258,6 +274,7 @@ func SelectAll(db *sql.DB, table interface{}, args ...interface{}) ([]interface{
 	return readRows(rows, rltype)
 }
 
+//select count(*) as num from table
 func GetRecordCount(db *sql.DB, table interface{}, args ...interface{}) (int, error) {
 	tbname := ""
 	ttype := reflect.TypeOf(table)
@@ -304,6 +321,7 @@ func GetRecordCount(db *sql.DB, table interface{}, args ...interface{}) (int, er
 	return 0, nil
 }
 
+//select column as c from table order by c desc limit 1
 func GetRecordMax(db *sql.DB, table interface{}, column string, args ...interface{}) (int, error) {
 	tbname := ""
 	ttype := reflect.TypeOf(table)
@@ -367,6 +385,7 @@ func ReplaceBatch(db *sql.DB, table interface{}) (sql.Result, error) {
 	return replaceORinsertBatch(db, table, "replace")
 }
 
+//delete from table
 func DeleteRecord(db *sql.DB, table interface{}, args ...interface{}) (sql.Result, error) {
 	tbname := ""
 	ttype := reflect.TypeOf(table)
