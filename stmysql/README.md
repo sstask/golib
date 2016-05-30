@@ -31,4 +31,6 @@ example
 	fmt.Println(stmysql.InsertOne(db, &person{9, "f", 10}))
 	fmt.Println(stmysql.ReplaceOne(db, per))
 	fmt.Println(stmysql.DeleteRecord(db, per, "where id=?", 1))
+	fmt.Println(stmysql.UpdateRecord(db, "person", map[string]interface{}{"Name": "XXX", "Age": 66}, "where id=?", 2))
+	fmt.Println(stmysql.UpdateRecordEx(db, person{2, "e", 10}, "where id=?", 2))
 ```

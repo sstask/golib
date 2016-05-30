@@ -413,3 +413,70 @@ func DeleteRecord(db *sql.DB, table interface{}, args ...interface{}) (sql.Resul
 		return db.Exec(sqlcmd)
 	}
 }
+
+func UpdateRecord(db *sql.DB, table string, data map[string]interface{}, args ...interface{}) (sql.Result, error) {
+	updateVals := make([]interface{}, 0, len(data))
+	sqlcmd := "update " + table + " set "
+	isfirst := true
+	for k, v := range data {
+		if !isfirst {
+			sqlcmd += ","
+		}
+		sqlcmd += " " + k + "=?"
+		isfirst = false
+
+		var err error
+		updateVals, err = insertVal(updateVals, reflect.ValueOf(v))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(args) > 0 {
+		if reflect.TypeOf(args[0]).Kind() != reflect.String {
+			return nil, fmt.Errorf("args[0] should is a string")
+		}
+		sqlcmd += " " + args[0].(string)
+	}
+
+	if len(args) > 1 {
+		for _, v := range args[1:] {
+			updateVals = append(updateVals, v)
+		}
+	}
+	return db.Exec(sqlcmd, updateVals...)
+}
+
+func UpdateRecordEx(db *sql.DB, table interface{}, args ...interface{}) (sql.Result, error) {
+	types := reflect.TypeOf(table)
+	if types.Kind() != reflect.Ptr && types.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("you should give a struct or a ptr of a struct")
+	}
+	if types.Kind() == reflect.Ptr && types.Elem().Kind() != reflect.Struct {
+		return nil, fmt.Errorf("you should give a struct or a ptr of a struct")
+	}
+	//rltype:the type of the struct tbVal:the value of the struct
+	rltype := types
+	tbVal := reflect.ValueOf(table)
+	if types.Kind() == reflect.Ptr {
+		rltype = types.Elem()
+		tbVal = tbVal.Elem()
+	}
+	//read table config
+	if _, has := tableCfgType[rltype]; !has {
+		_, err := addTable(table)
+		if err != nil {
+			return nil, err
+		}
+	}
+	tbcfg, _ := tableCfgType[rltype]
+	datas := make(map[string]interface{})
+	for k, v := range tbcfg.columns {
+		if !v.export || v.autoinc {
+			continue
+		}
+		datas[k] = tbVal.FieldByName(v.name).Interface()
+	}
+
+	return UpdateRecord(db, tbcfg.name, datas, args...)
+}
