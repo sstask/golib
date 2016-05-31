@@ -29,6 +29,8 @@ type MsgParse interface {
 //a simple example of "MsgParse interface"
 //it's a echo server or client,when it recv a message, it send the message back at once
 type SimpleEchoMsgParse struct {
+	//you can put any data here,and use Session to access it
+	Mydata int
 }
 
 func (SimpleEchoMsgParse) ParseMsg(buf []byte) (parsedlen int, msg []byte) {

@@ -6,7 +6,7 @@ import (
 )
 
 type Connector struct {
-	sess          *Session
+	*Session
 	address       string
 	reconnectMSec int //Millisecond
 	closeSignal   chan int
@@ -36,7 +36,7 @@ func NewConnector(address string, reconnectmsec int, msgparse MsgParse) *Connect
 				continue
 			}
 
-			conn.sess = NewSession(cn, msgparse, func(*Session) {
+			conn.Session = NewSession(cn, msgparse, func(*Session) {
 				conn.closeSignal <- 1
 			})
 
@@ -55,23 +55,23 @@ func NewConnector(address string, reconnectmsec int, msgparse MsgParse) *Connect
 }
 
 func (this *Connector) Send(data []byte) bool {
-	if this.sess == nil {
+	if this.Session == nil {
 		return false
 	}
-	return this.sess.Send(data)
+	return this.Session.Send(data)
 }
 
 func (this *Connector) IsConnected() bool {
-	if this.sess == nil {
+	if this.Session == nil {
 		return false
 	}
-	return !this.sess.IsClose()
+	return !this.Session.IsClose()
 }
 
 func (this *Connector) Close() {
 	this.reconnectMSec = 0
-	if this.sess != nil {
-		this.sess.Close()
+	if this.Session != nil {
+		this.Session.Close()
 	}
 	<-this.exitSignal
 	close(this.exitSignal)

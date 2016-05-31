@@ -2,6 +2,7 @@ package stnet
 
 import (
 	"net"
+	"reflect"
 	"sync/atomic"
 	"time"
 )
@@ -40,7 +41,7 @@ func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) *Session {
 		writer:   make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
 		closer:   make(chan int),
 		wclose:   make(chan int),
-		MsgParse: msgparse,
+		MsgParse: reflect.New(reflect.TypeOf(msgparse)).Interface().(MsgParse),
 		onclose:  onclose,
 	}
 	go sess.dosend()
@@ -50,6 +51,10 @@ func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) *Session {
 
 func (this *Session) GetID() uint64 {
 	return this.id
+}
+
+func (this *Session) InterData() MsgParse {
+	return this.MsgParse
 }
 
 func (this *Session) Send(data []byte) bool {
