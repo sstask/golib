@@ -44,7 +44,7 @@ func (SimpleEchoMsgParse) ProcMsg(sess *Session, msg SessionMsg) {
 	} else if msg.Cmd == CMD_CLOSE {
 		fmt.Println("socket closed ", sess.GetID())
 	} else if msg.Cmd == CMD_DATA {
-		fmt.Printf("socket %d recv msg:	%s\n", sess.GetID(), string(msg.Data))
+		fmt.Printf("socket %d recv msg[%d]:	%s\n", sess.GetID(), len(msg.Data), string(msg.Data))
 		sess.Send(msg.Data)
 	}
 }

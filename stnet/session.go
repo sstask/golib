@@ -58,7 +58,8 @@ func (this *Session) InterData() MsgParse {
 }
 
 func (this *Session) Send(data []byte) bool {
-	msg := make([]byte, len(data))
+	msg := bufferPool.Alloc(len(data))
+	msg = msg[:len(data)]
 	copy(msg, data)
 	for {
 		select {
@@ -99,6 +100,7 @@ func (this *Session) dosend() {
 				this.socket.Close()
 				goto exitsend
 			}
+			bufferPool.Free(buf)
 		}
 	}
 
@@ -109,7 +111,8 @@ exitsend:
 func (this *Session) dorecv() {
 	this.ProcMsg(this, SessionMsg{CMD_NEW, nil})
 
-	msgbuf := make([]byte, MsgBuffSize)
+	msgbuf := bufferPool.Alloc(MsgBuffSize)
+	defer bufferPool.Free(msgbuf)
 	msglen := 0
 	for {
 		if msglen*6/5 > len(msgbuf) {
@@ -125,7 +128,8 @@ func (this *Session) dorecv() {
 		msglen += n
 		dellen, msg := this.ParseMsg(msgbuf[0:msglen])
 		if msg != nil {
-			msgcpy := make([]byte, len(msg))
+			msgcpy := bufferPool.Alloc(len(msg))
+			msgcpy = msgcpy[:len(msg)]
 			copy(msgcpy, msg)
 			this.ProcMsg(this, SessionMsg{CMD_DATA, msgcpy})
 		}
