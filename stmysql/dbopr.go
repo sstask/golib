@@ -194,3 +194,18 @@ func UpdateTableEx(db *sql.DB, table interface{}) ([]string, error) {
 	}
 	return updateTable(db, tlname)
 }
+
+//db, err := sql.Open("mysql", "name:pwd@tcp(127.0.0.1:3306)/")
+func CreateDatabase(db *sql.DB, name string) error {
+	sqlstr := "CREATE DATABASE IF NOT EXISTS " + name
+	_, err := db.Exec(sqlstr)
+	if err != nil {
+		return err
+	}
+	sqlstr = "USE " + name
+	_, err = db.Exec(sqlstr)
+	if err != nil {
+		return err
+	}
+	return nil
+}

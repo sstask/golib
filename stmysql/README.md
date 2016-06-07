@@ -7,12 +7,28 @@ then use UpdateTableEx writing it into database;
 
 example
 ```
-	type person struct {
-		Id   uint
-		Name string
-		Age  uint8
-	}
+import (
+	"database/sql"
+	_ "encoding/json"
+	"fmt"
+	"golib/stmysql"
+	_ "github.com/go-sql-driver/mysql"
+)
 
+type person struct {
+	Id   uint
+	Name string
+	Age  uint8
+}
+
+func main() {
+	db, err := sql.Open("mysql", "name:pwd@tcp(10.0.0.227:3306)/")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	fmt.Println(stmysql.CreateDatabase(db, "Test"))
 	tablestr, err1 := stmysql.UpdateTableEx(db, person{})
 	fmt.Println(tablestr, err1)
 
@@ -33,4 +49,5 @@ example
 	fmt.Println(stmysql.DeleteRecord(db, per, "where id=?", 1))
 	fmt.Println(stmysql.UpdateRecord(db, "person", map[string]interface{}{"Name": "XXX", "Age": 66}, "where id=?", 2))
 	fmt.Println(stmysql.UpdateRecordEx(db, person{2, "e", 10}, "where id=?", 2))
+}
 ```
