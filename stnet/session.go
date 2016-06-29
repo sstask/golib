@@ -1,6 +1,7 @@
 package stnet
 
 import (
+	"fmt"
 	"net"
 	"reflect"
 	"sync/atomic"
@@ -31,9 +32,9 @@ type Session struct {
 	onclose FuncOnClose
 }
 
-func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) *Session {
+func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) (*Session, error) {
 	if msgparse == nil {
-		return nil
+		return nil, fmt.Errorf("MsgParse should not be nil")
 	}
 	sess := &Session{
 		id:       atomic.AddUint64(&GlobalSessionID, 1),
@@ -46,7 +47,7 @@ func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) *Session {
 	}
 	go sess.dosend()
 	go sess.dorecv()
-	return sess
+	return sess, nil
 }
 
 func (this *Session) GetID() uint64 {

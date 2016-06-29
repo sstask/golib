@@ -2,11 +2,11 @@ stnet is a simple net lib.
 example
 ### echo server
 ```
-lster := stnet.NewListener("127.0.0.1:6666", stnet.SimpleEchoMsgParse{})
+lster,_ := stnet.NewListener("127.0.0.1:6666", stnet.SimpleEchoMsgParse{})
 ```
 ### echo client
 ```
-conn := stnet.NewConnector("127.0.0.1:6666", 100, stnet.SimpleEchoMsgParse{})
+conn,_ := stnet.NewConnector("127.0.0.1:6666", 100, stnet.SimpleEchoMsgParse{})
 
 for {
 		if conn.IsConnected() {

@@ -1,6 +1,7 @@
 package stnet
 
 import (
+	"fmt"
 	"net"
 	"sync"
 )
@@ -15,14 +16,14 @@ type Listener struct {
 	waitExit     sync.WaitGroup
 }
 
-func NewListener(address string, msgparse MsgParse) *Listener {
+func NewListener(address string, msgparse MsgParse) (*Listener, error) {
 	if msgparse == nil {
-		return nil
+		return nil, fmt.Errorf("MsgParse should not be nil")
 	}
 
 	ls, err := net.Listen("tcp", address)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	lis := &Listener{
@@ -40,7 +41,7 @@ func NewListener(address string, msgparse MsgParse) *Listener {
 
 			lis.sessMapMutex.Lock()
 			lis.waitExit.Add(1)
-			sess := NewSession(conn, msgparse, func(con *Session) {
+			sess, _ := NewSession(conn, msgparse, func(con *Session) {
 				lis.sessMapMutex.Lock()
 				delete(lis.sessMap, con.id)
 				lis.waitExit.Done()
@@ -51,7 +52,7 @@ func NewListener(address string, msgparse MsgParse) *Listener {
 		}
 		lis.Close()
 	}()
-	return lis
+	return lis, nil
 }
 
 func (this *Listener) Close() {
