@@ -1,3 +1,8 @@
+//a simple log lib
+//some code from code.google.com/p/log4go
+//console log is open, file and sock log is close by default
+//you can use functin SetxxxLevel open or close the log pattern
+//it will only print the log whose level is higher than the pattern's level
 package stlog
 
 import (
@@ -51,7 +56,7 @@ func FormatLogRecord(rec *LogRecord) string {
 		zone, _ := rec.Created.Zone()
 		updated := &formatCacheType{
 			LastUpdateSeconds: secs,
-			formatTime:        fmt.Sprintf("%04d/%02d/%02d %02d:%02d:%02d %s", year, month, day, hour, minute, second, zone),
+			formatTime:        fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d %s", year, month, day, hour, minute, second, zone),
 		}
 		cache = *updated
 		formatCache = updated
@@ -166,16 +171,41 @@ func (log *Logger) Close() {
 	log.recv <- rec
 	close(log.clos)
 	<-log.wait
+
+	if log.fileWrite != nil {
+		log.fileWrite.close()
+	}
+	if log.conn != nil {
+		log.conn.Close()
+	}
 }
 
 func (log *Logger) SetTermLevel(lvl Level) {
 	log.term = lvl
 }
 
-func (log *Logger) SetFileLevel(lvl Level, fname string) {
+//param: maxsize int (the maxsize of single log file), daily int(is rotate daily), maxbackup int(max count of the backup log files)
+func (log *Logger) SetFileLevel(lvl Level, fname string, param ...int) {
 	log.file = lvl
+	if lvl == CLOSE {
+		if log.fileWrite != nil {
+			log.fileWrite.close()
+		}
+		return
+	}
+
 	var err error
-	log.fileWrite, err = newFileLogWriter(fname)
+	var maxsize, daily, maxbackup int
+	if len(param) > 0 {
+		maxsize = param[0]
+	}
+	if len(param) > 1 {
+		daily = param[1]
+	}
+	if len(param) > 2 {
+		maxbackup = param[2]
+	}
+	log.fileWrite, err = newFileLogWriter(fname, maxsize, daily, maxbackup)
 	if err != nil {
 		fmt.Fprint(os.Stderr, "log file error: %s\n", err)
 		return
@@ -185,6 +215,12 @@ func (log *Logger) SetFileLevel(lvl Level, fname string) {
 func (log *Logger) SetSockLevel(lvl Level, serverip string) {
 	log.sock = lvl
 	log.sockip = serverip
+	if lvl == CLOSE {
+		if log.conn != nil {
+			log.conn.Close()
+		}
+		return
+	}
 
 	sock, err := net.Dial("tcp", serverip)
 	if err != nil {

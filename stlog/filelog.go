@@ -24,7 +24,7 @@ type FileLogWriter struct {
 	maxbackup int
 }
 
-func newFileLogWriter(fname string) (*FileLogWriter, error) {
+func newFileLogWriter(fname string, maxsize int, daily int, maxbackup int) (*FileLogWriter, error) {
 	log, err := os.OpenFile(fname, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
 	if err != nil {
 		return nil, err
@@ -38,10 +38,11 @@ func newFileLogWriter(fname string) (*FileLogWriter, error) {
 	return &FileLogWriter{
 		filename:       fname,
 		file:           log,
+		maxsize:        int64(maxsize),
 		cursize:        size,
-		daily:          true,
+		daily:          daily > 0,
 		daily_opendate: time.Now().Day(),
-		maxbackup:      30,
+		maxbackup:      maxbackup,
 	}, nil
 }
 
@@ -76,10 +77,14 @@ func (w *FileLogWriter) rotate() error {
 
 	_, err := os.Lstat(w.filename)
 	if err == nil { // file exists
-		fname := w.filename + fmt.Sprintf(".%s", time.Now().Format("2006-01-02"))
-		if w.daily && time.Now().Day() != w.daily_opendate {
-			yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-			fname = w.filename + fmt.Sprintf(".%s", yesterday)
+		fname := w.filename
+		if w.daily {
+			if time.Now().Day() != w.daily_opendate {
+				yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+				fname = w.filename + fmt.Sprintf(".%s", yesterday)
+			} else {
+				fname = w.filename + fmt.Sprintf(".%s", time.Now().Format("2006-01-02"))
+			}
 		}
 		err = renameFiles(fname, w.maxbackup)
 		if err != nil {
