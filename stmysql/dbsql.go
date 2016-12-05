@@ -4,7 +4,20 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"strings"
 )
+
+func findColFieldID(types reflect.Type, colName string) int {
+	colLow := strings.ToLower(colName)
+	for i := 0; i < types.NumField(); i++ {
+		typN := types.Field(i).Name
+		typLow := strings.ToLower(typN)
+		if typLow == colLow {
+			return i
+		}
+	}
+	return -1
+}
 
 //read the rows's content to a slice of struct pointers
 //rows:mysql query result ttype:struct type
@@ -15,17 +28,22 @@ func readRows(rows *sql.Rows, ttype reflect.Type) ([]interface{}, error) {
 		//new a struct
 		colval := reflect.New(ttype).Interface()
 		//[]byte save the encoded conent of the struct's special member
-		structval := make(map[string]*[]byte)
+		structval := make(map[int]*[]byte)
 		//struct's value
 		vals := reflect.ValueOf(colval).Elem()
 		//save the address of the struct's member
 		rets := make([]interface{}, 0, len(cols))
 		for _, v := range cols {
-			if f, ok := vals.Type().FieldByName(v); ok {
-				val := vals.FieldByIndex(f.Index)
-				if _, has := notEncodeTypes[reflect.TypeOf(val.Interface())]; !has {
+			idx := findColFieldID(ttype, v)
+			if idx == -1 {
+				var i interface{}
+				rets = append(rets, &i)
+				continue
+			}
+			if val := vals.Field(idx); val.Addr().CanInterface() {
+				if _, has := notEncodeTypes[val.Type()]; !has {
 					sli := make([]byte, 0)
-					structval[v] = &sli
+					structval[idx] = &sli
 					rets = append(rets, &sli)
 				} else {
 					rets = append(rets, val.Addr().Interface())
@@ -41,8 +59,7 @@ func readRows(rows *sql.Rows, ttype reflect.Type) ([]interface{}, error) {
 		}
 		//unmarshal the encoded members
 		for k, v := range structval {
-			if f, ok := vals.Type().FieldByName(k); ok {
-				val := vals.FieldByIndex(f.Index)
+			if val := vals.Field(k); val.Addr().CanInterface() {
 				if len(*v) > 0 {
 					err = unmarshal(*v, val.Addr().Interface())
 					if err != nil {
