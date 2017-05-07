@@ -1,29 +1,12 @@
 package stnet
 
-import (
-	"fmt"
-)
-
-const (
-	CMD_NEW int = iota
-	CMD_CLOSE
-	CMD_DATA
-)
-
-type SessionMsg struct {
-	Cmd  int    `messagetype`
-	Data []byte `messagedata`
-}
-
 type MsgParse interface {
-	ParseMsg(buf []byte) (parsedlen int, msg []byte)
-	//buf:recved data now;
-	//parsedlen:length of recved data parsed;
-	//msg: message which is parsed from recved data
-
-	ProcMsg(*Session, SessionMsg)
 	//*Session:session which recved message
-	//SessionMsg: message recved
+	//[]byte:recved data now;
+	//int:length of recved data parsed;
+	ParseMsg(*Session, []byte) int
+	OnOpen(*Session)
+	OnClose(*Session)
 }
 
 //a simple example of "MsgParse interface"
@@ -33,18 +16,7 @@ type SimpleEchoMsgParse struct {
 	Mydata int
 }
 
-func (SimpleEchoMsgParse) ParseMsg(buf []byte) (parsedlen int, msg []byte) {
-	return len(buf), buf
-}
-func (SimpleEchoMsgParse) ProcMsg(sess *Session, msg SessionMsg) {
-	if msg.Cmd == CMD_NEW {
-		fmt.Println("new socket ", sess.GetID())
-		msg := []byte("hello")
-		sess.Send(msg)
-	} else if msg.Cmd == CMD_CLOSE {
-		fmt.Println("socket closed ", sess.GetID())
-	} else if msg.Cmd == CMD_DATA {
-		fmt.Printf("socket %d recv msg[%d]:	%s\n", sess.GetID(), len(msg.Data), string(msg.Data))
-		sess.Send(msg.Data)
-	}
+func (SimpleEchoMsgParse) ParseMsg(sess *Session, buf []byte) int {
+	sess.Send(buf)
+	return len(buf)
 }

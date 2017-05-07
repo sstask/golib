@@ -1,7 +1,6 @@
 package stnet
 
 import (
-	"fmt"
 	"net"
 	"time"
 )
@@ -16,7 +15,7 @@ type Connector struct {
 
 func NewConnector(address string, reconnectmsec int, msgparse MsgParse) (*Connector, error) {
 	if msgparse == nil {
-		return nil, fmt.Errorf("MsgParse should not be nil")
+		return nil, ErrMsgParseNil
 	}
 
 	conn := &Connector{
@@ -55,9 +54,9 @@ func NewConnector(address string, reconnectmsec int, msgparse MsgParse) (*Connec
 	return conn, nil
 }
 
-func (this *Connector) Send(data []byte) bool {
+func (this *Connector) Send(data []byte) error {
 	if this.Session == nil {
-		return false
+		return ErrSocketClosed
 	}
 	return this.Session.Send(data)
 }
