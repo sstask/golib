@@ -16,13 +16,13 @@ type SimpleEchoMsgParse struct {
 	Mydata int
 }
 
-func (SimpleEchoMsgParse) ParseMsg(sess *Session, buf []byte) int {
+func (*SimpleEchoMsgParse) ParseMsg(sess *Session, buf []byte) int {
 	sess.Send(buf)
 	return len(buf)
 }
 
-func (SimpleEchoMsgParse) OnOpen(sess *Session) {
+func (*SimpleEchoMsgParse) OnOpen(sess *Session) {
 }
 
-func (SimpleEchoMsgParse) OnClose(sess *Session) {
+func (*SimpleEchoMsgParse) OnClose(sess *Session) {
 }

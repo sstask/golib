@@ -56,17 +56,18 @@ func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) (*Session,
 		hander:   make(chan []byte, RecvListLen),
 		closer:   make(chan int),
 		wg:       &sync.WaitGroup{},
-		MsgParse: reflect.New(reflect.TypeOf(msgparse)).Interface().(MsgParse),
+		MsgParse: reflect.New(reflect.TypeOf(msgparse).Elem()).Interface().(MsgParse),
 		onclose:  onclose,
 	}
 	asyncDo(sess.dosend, sess.wg)
-	asyncDo(sess.dorecv, sess.wg)
 	asyncDo(sess.dohand, sess.wg)
+
+	go sess.dorecv()
 	return sess, nil
 }
 
 func (s *Session) GetID() uint64 {
-	return s.id
+	return atomic.LoadUint64(&s.id)
 }
 
 func (s *Session) InterData() MsgParse {
