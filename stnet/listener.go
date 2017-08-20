@@ -14,9 +14,11 @@ type Listener struct {
 	sessMap      map[uint64]*Session
 	sessMapMutex sync.RWMutex
 	waitExit     sync.WaitGroup
+
+	InnerData interface{}
 }
 
-func NewListener(address string, msgparse MsgParse) (*Listener, error) {
+func NewListener(address string, msgparse MsgParse, innerdata interface{}) (*Listener, error) {
 	if msgparse == nil {
 		return nil, fmt.Errorf("MsgParse should not be nil")
 	}
@@ -27,9 +29,10 @@ func NewListener(address string, msgparse MsgParse) (*Listener, error) {
 	}
 
 	lis := &Listener{
-		isclose: false,
-		address: address,
-		lst:     ls,
+		isclose:   false,
+		address:   address,
+		lst:       ls,
+		InnerData: innerdata,
 	}
 
 	go func() {
@@ -46,7 +49,7 @@ func NewListener(address string, msgparse MsgParse) (*Listener, error) {
 				delete(lis.sessMap, con.id)
 				lis.waitExit.Done()
 				lis.sessMapMutex.Unlock()
-			})
+			}, lis.InnerData)
 			lis.sessMap[sess.id] = sess
 			lis.sessMapMutex.Unlock()
 		}

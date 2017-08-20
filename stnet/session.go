@@ -43,21 +43,24 @@ type Session struct {
 	wg     *sync.WaitGroup
 
 	onclose FuncOnClose
+
+	OuterData interface{}
 }
 
-func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) (*Session, error) {
+func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose, outerdata interface{}) (*Session, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
 	sess := &Session{
-		id:       atomic.AddUint64(&GlobalSessionID, 1),
-		socket:   con,
-		writer:   make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
-		hander:   make(chan []byte, RecvListLen),
-		closer:   make(chan int),
-		wg:       &sync.WaitGroup{},
-		MsgParse: reflect.New(reflect.TypeOf(msgparse).Elem()).Interface().(MsgParse),
-		onclose:  onclose,
+		id:        atomic.AddUint64(&GlobalSessionID, 1),
+		socket:    con,
+		writer:    make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
+		hander:    make(chan []byte, RecvListLen),
+		closer:    make(chan int),
+		wg:        &sync.WaitGroup{},
+		MsgParse:  reflect.New(reflect.TypeOf(msgparse).Elem()).Interface().(MsgParse),
+		onclose:   onclose,
+		OuterData: outerdata,
 	}
 	asyncDo(sess.dosend, sess.wg)
 	asyncDo(sess.dohand, sess.wg)
@@ -149,10 +152,10 @@ func (s *Session) dorecv() {
 		s.hander <- msgbuf[0:n]
 
 		bufLen := len(msgbuf)
-		if n == bufLen {
-			msgbuf = bp.Alloc(bufLen * 2)
-		} else if MinMsgSize < bufLen && n*2 < bufLen {
+		if MinMsgSize < bufLen && n*2 < bufLen {
 			msgbuf = bp.Alloc(bufLen / 2)
+		} else {
+			msgbuf = bp.Alloc(bufLen * 2)
 		}
 	}
 }
@@ -169,9 +172,7 @@ func (s *Session) dohand() {
 			}
 		anthorMsg:
 			parseLen := s.ParseMsg(s, buf)
-			if parseLen >= 0 {
-				tempBuf = buf[parseLen:]
-			}
+			tempBuf = buf[parseLen:]
 			if parseLen >= len(buf) {
 				tempBuf = nil
 				bp.Free(buf)

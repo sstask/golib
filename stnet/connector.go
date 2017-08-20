@@ -11,9 +11,11 @@ type Connector struct {
 	reconnectMSec int //Millisecond
 	closeSignal   chan int
 	exitSignal    chan int
+
+	InnerData interface{}
 }
 
-func NewConnector(address string, reconnectmsec int, msgparse MsgParse) (*Connector, error) {
+func NewConnector(address string, reconnectmsec int, msgparse MsgParse, innerdata interface{}) (*Connector, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
@@ -23,6 +25,7 @@ func NewConnector(address string, reconnectmsec int, msgparse MsgParse) (*Connec
 		exitSignal:    make(chan int),
 		address:       address,
 		reconnectMSec: reconnectmsec,
+		InnerData:     innerdata,
 	}
 
 	go func() {
@@ -38,7 +41,7 @@ func NewConnector(address string, reconnectmsec int, msgparse MsgParse) (*Connec
 
 			conn.Session, _ = NewSession(cn, msgparse, func(*Session) {
 				conn.closeSignal <- 1
-			})
+			}, innerdata)
 
 			_, ok := <-conn.closeSignal
 			if !ok {
