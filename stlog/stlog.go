@@ -38,8 +38,8 @@ func (l Level) String() string {
 
 /****** format ******/
 type formatCacheType struct {
-	LastUpdateSeconds int64
-	formatTime        string
+	LastUpdateMillSeconds int64
+	formatTime            string
 }
 
 var formatCache = &formatCacheType{}
@@ -49,20 +49,21 @@ func FormatLogRecord(rec *LogRecord) string {
 		return "<nil>"
 	}
 	secs := rec.Created.UnixNano() / 1e9
+	millSecs := rec.Created.UnixNano() / 1e6 % secs
 	cache := *formatCache
-	if cache.LastUpdateSeconds != secs {
+	if cache.LastUpdateMillSeconds != millSecs {
 		month, day, year := rec.Created.Month(), rec.Created.Day(), rec.Created.Year()
 		hour, minute, second := rec.Created.Hour(), rec.Created.Minute(), rec.Created.Second()
 		zone, _ := rec.Created.Zone()
 		updated := &formatCacheType{
-			LastUpdateSeconds: secs,
-			formatTime:        fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d %s", year, month, day, hour, minute, second, zone),
+			LastUpdateMillSeconds: millSecs,
+			formatTime:            fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d:%03d %s", year, month, day, hour, minute, second, millSecs, zone),
 		}
 		cache = *updated
 		formatCache = updated
 	}
 
-	return "[" + cache.formatTime + "][" + rec.Level.String() + "](" + rec.Source + ")" + rec.Message + "\n"
+	return cache.formatTime + "|" + rec.Level.String() + "|" + rec.Source + "|" + rec.Message + "\n"
 }
 
 type LogRecord struct {

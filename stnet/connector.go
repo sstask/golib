@@ -2,80 +2,106 @@ package stnet
 
 import (
 	"net"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type Connector struct {
 	*Session
-	address       string
-	reconnectMSec int //Millisecond
-	closeSignal   chan int
-	exitSignal    chan int
-
-	InnerData interface{}
+	address         string
+	reconnectMSec   int //Millisecond
+	isclose         uint32
+	closeflag       bool
+	sessCloseSignal chan int
+	wg              *sync.WaitGroup
 }
 
-func NewConnector(address string, reconnectmsec int, msgparse MsgParse, innerdata interface{}) (*Connector, error) {
+func NewConnector(address string, reconnectmsec int, msgparse MsgParse, UserData interface{}) (*Connector, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
 
 	conn := &Connector{
-		closeSignal:   make(chan int),
-		exitSignal:    make(chan int),
-		address:       address,
-		reconnectMSec: reconnectmsec,
-		InnerData:     innerdata,
+		sessCloseSignal: make(chan int, 1),
+		address:         address,
+		reconnectMSec:   reconnectmsec,
+		wg:              &sync.WaitGroup{},
 	}
 
-	go func() {
-		for {
-			cn, err := net.Dial("tcp", conn.address)
-			if err != nil {
-				if conn.reconnectMSec == 0 {
-					break
-				}
-				time.Sleep(time.Duration(conn.reconnectMSec) * time.Millisecond)
-				continue
-			}
+	conn.Session, _ = newConnSession(msgparse, func(*Session) {
+		conn.sessCloseSignal <- 1
+	}, UserData)
 
-			conn.Session, _ = NewSession(cn, msgparse, func(*Session) {
-				conn.closeSignal <- 1
-			}, innerdata)
+	go conn.connect()
 
-			_, ok := <-conn.closeSignal
-			if !ok {
-				break //chan closed
-			}
-			if conn.reconnectMSec == 0 {
-				break
-			}
-			time.Sleep(time.Duration(conn.reconnectMSec) * time.Millisecond)
-		}
-		conn.exitSignal <- 1
-	}()
 	return conn, nil
 }
 
-func (this *Connector) Send(data []byte) error {
-	if this.Session == nil {
-		return ErrSocketClosed
+func NewConnectorNoStart(address string, reconnectmsec int, msgparse MsgParse, UserData interface{}) (*Connector, error) {
+	if msgparse == nil {
+		return nil, ErrMsgParseNil
 	}
-	return this.Session.Send(data)
+
+	conn := &Connector{
+		sessCloseSignal: make(chan int, 1),
+		address:         address,
+		reconnectMSec:   reconnectmsec,
+		wg:              &sync.WaitGroup{},
+	}
+
+	conn.isclose = 1
+
+	conn.Session, _ = newConnSession(msgparse, func(*Session) {
+		conn.sessCloseSignal <- 1
+	}, UserData)
+
+	return conn, nil
 }
 
-func (this *Connector) IsConnected() bool {
-	if this.Session == nil {
-		return false
+func (conn *Connector) connect() {
+	conn.wg.Add(1)
+	for !conn.closeflag {
+		cn, err := net.Dial("tcp", conn.address)
+		if err != nil {
+			if conn.reconnectMSec <= 0 {
+				break
+			}
+			time.Sleep(time.Duration(conn.reconnectMSec) * time.Millisecond)
+			continue
+		}
+
+		conn.Session.restart(cn)
+
+		<-conn.sessCloseSignal
+		if conn.reconnectMSec <= 0 {
+			break
+		}
+		time.Sleep(time.Duration(conn.reconnectMSec) * time.Millisecond)
 	}
-	return !this.Session.IsClose()
+	atomic.CompareAndSwapUint32(&conn.isclose, 0, 1)
+	conn.wg.Done()
 }
 
-func (this *Connector) Close() {
-	this.reconnectMSec = 0
-	if this.Session != nil {
-		this.Session.Close()
+func (cnt *Connector) IsConnected() bool {
+	return !cnt.Session.IsClose()
+}
+
+func (c *Connector) Start() {
+	if atomic.CompareAndSwapUint32(&c.isclose, 1, 0) {
+		go c.connect()
 	}
-	<-this.exitSignal
-	close(this.exitSignal)
+}
+
+func (c *Connector) Close() {
+	if c.IsClose() {
+		return
+	}
+	c.closeflag = true
+	c.Session.Close()
+	c.wg.Wait()
+}
+
+func (c *Connector) IsClose() bool {
+	return atomic.LoadUint32(&c.isclose) > 0
 }
