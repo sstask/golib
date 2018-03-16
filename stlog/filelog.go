@@ -65,6 +65,7 @@ func (w *FileLogWriter) write(msg string) error {
 	if err != nil {
 		return err
 	}
+	w.file.Sync()
 
 	w.cursize += int64(n)
 	return nil

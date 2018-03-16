@@ -30,7 +30,7 @@ func ReadXlsx(file string, sheet string) (*Sheet, error) {
 			for r, row := range st.Rows {
 				data[r] = make([]string, st.MaxCol)
 				for c, cell := range row.Cells {
-					data[r][c], _ = cell.String()
+					data[r][c] = cell.String()
 				}
 			}
 			return &Sheet{uint16(st.MaxRow), uint16(st.MaxCol), data}, nil

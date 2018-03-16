@@ -2,19 +2,38 @@ package stnet
 
 import (
 	"errors"
+
 	"net"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
+type CMDType int
+
+const (
+	Data CMDType = 0 + iota
+	Open
+	Close
+)
+
 var (
 	ErrSocketClosed   = errors.New("socket closed")
+	ErrSocketIsOpen   = errors.New("socket is open")
 	ErrSendOverTime   = errors.New("send message over time")
 	ErrSendBuffIsFull = errors.New("send buffer is full")
 	ErrMsgParseNil    = errors.New("MsgParse is nil")
 )
+
+type MsgParse interface {
+	//*Session:session which recved message
+	//CMDType:event type of msg
+	//[]byte:recved data now;
+	//int:length of recved data parsed;
+	ParseMsg(sess *Session, data []byte) int
+
+	SessionEvent(sess *Session, cmd CMDType)
+}
 
 //this will be called when session closed
 type FuncOnClose func(*Session)
@@ -35,32 +54,31 @@ var GlobalSessionID uint64
 type Session struct {
 	MsgParse
 
-	id     uint64
-	socket net.Conn
-	writer chan []byte
-	hander chan []byte
-	closer chan int
-	wg     *sync.WaitGroup
-
+	id      uint64
+	socket  net.Conn
+	writer  chan []byte
+	hander  chan []byte
+	closer  chan int
+	wg      *sync.WaitGroup
 	onclose FuncOnClose
+	isclose uint32
 
-	OuterData interface{}
+	UserData interface{}
 }
 
-func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose, outerdata interface{}) (*Session, error) {
+func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) (*Session, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
 	sess := &Session{
-		id:        atomic.AddUint64(&GlobalSessionID, 1),
-		socket:    con,
-		writer:    make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
-		hander:    make(chan []byte, RecvListLen),
-		closer:    make(chan int),
-		wg:        &sync.WaitGroup{},
-		MsgParse:  reflect.New(reflect.TypeOf(msgparse).Elem()).Interface().(MsgParse),
-		onclose:   onclose,
-		OuterData: outerdata,
+		id:       atomic.AddUint64(&GlobalSessionID, 1),
+		socket:   con,
+		writer:   make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
+		hander:   make(chan []byte, RecvListLen),
+		closer:   make(chan int),
+		wg:       &sync.WaitGroup{},
+		MsgParse: msgparse,
+		onclose:  onclose,
 	}
 	asyncDo(sess.dosend, sess.wg)
 	asyncDo(sess.dohand, sess.wg)
@@ -69,12 +87,39 @@ func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose, outerdata 
 	return sess, nil
 }
 
-func (s *Session) GetID() uint64 {
-	return atomic.LoadUint64(&s.id)
+func newConnSession(msgparse MsgParse, onclose FuncOnClose, UserData interface{}) (*Session, error) {
+	if msgparse == nil {
+		return nil, ErrMsgParseNil
+	}
+	sess := &Session{
+		id:       atomic.AddUint64(&GlobalSessionID, 1),
+		writer:   make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
+		hander:   make(chan []byte, RecvListLen),
+		closer:   make(chan int),
+		wg:       &sync.WaitGroup{},
+		MsgParse: msgparse,
+		onclose:  onclose,
+		UserData: UserData,
+	}
+	close(sess.closer)
+	sess.isclose = 1
+	return sess, nil
 }
 
-func (s *Session) InterData() MsgParse {
-	return s.MsgParse
+func (s *Session) restart(con net.Conn) error {
+	if !atomic.CompareAndSwapUint32(&s.isclose, 1, 0) {
+		return ErrSocketIsOpen
+	}
+	s.closer = make(chan int)
+	s.socket = con
+	asyncDo(s.dosend, s.wg)
+	asyncDo(s.dohand, s.wg)
+	go s.dorecv()
+	return nil
+}
+
+func (s *Session) GetID() uint64 {
+	return s.id
 }
 
 func (s *Session) Send(data []byte) error {
@@ -112,12 +157,7 @@ func (s *Session) Close() {
 }
 
 func (s *Session) IsClose() bool {
-	select {
-	case <-s.closer:
-		return true
-	default:
-		return false
-	}
+	return atomic.LoadUint32(&s.isclose) > 0
 }
 
 func (s *Session) dosend() {
@@ -136,16 +176,17 @@ func (s *Session) dosend() {
 }
 
 func (s *Session) dorecv() {
-	s.OnOpen(s)
+	s.SessionEvent(s, Open)
 
 	msgbuf := bp.Alloc(MsgBuffSize)
 	for {
 		n, err := s.socket.Read(msgbuf)
 		if err != nil {
-			s.OnClose(s)
+			s.SessionEvent(s, Close)
 			s.socket.Close()
 			close(s.closer)
 			s.wg.Wait()
+			atomic.AddUint32(&s.isclose, 1)
 			s.onclose(s)
 			return
 		}
