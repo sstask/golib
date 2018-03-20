@@ -2,8 +2,6 @@ package stmysql
 
 import (
 	"database/sql"
-	"fmt"
-	"reflect"
 	"strconv"
 	"strings"
 )
@@ -64,14 +62,8 @@ ALTER TABLE table_name DROP column_name1, DROP column_name2;
 Postgre SQL
 ALTER TABLE table_name DROP COLUMN column_name1, DROP COLUMN column_name2;
 */
-func checkTable(db *sql.DB, table string) ([]string, error) {
-	tcfg, ok := tableCfgName[table]
-	if !ok {
-		return nil, fmt.Errorf("table[%s] have not add in cfg", table)
-	}
-
-	columns, err := GetTableColumns(db, table)
-	fmt.Println(err)
+func checkTable(db *sql.DB, tcfg *dbTable) ([]string, error) {
+	columns, err := GetTableColumns(db, tcfg.name)
 	if err != nil {
 		errstr := err.Error()
 		if !strings.Contains(errstr, "doesn't exist") {
@@ -80,7 +72,7 @@ func checkTable(db *sql.DB, table string) ([]string, error) {
 			if !tcfg.export {
 				return nil, nil
 			}
-			return newTable(&tcfg), nil
+			return newTable(tcfg), nil
 		}
 	} else if !tcfg.export { //drop table
 		newstr := "DROP TABLE " + tcfg.name
@@ -151,8 +143,21 @@ func checkTable(db *sql.DB, table string) ([]string, error) {
 	}
 }
 
-func updateTable(db *sql.DB, table string) ([]string, error) {
-	sqlstrs, err := checkTable(db, table)
+func CheckTable(db *sql.DB, table interface{}) ([]string, error) {
+	t, e := getTableConfig(table)
+	if e != nil {
+		return nil, e
+	}
+	return checkTable(db, t)
+}
+
+func UpdateTable(db *sql.DB, table interface{}) ([]string, error) {
+	t, e := getTableConfig(table)
+	if e != nil {
+		return nil, e
+	}
+
+	sqlstrs, err := checkTable(db, t)
 	if err != nil {
 		return nil, err
 	}
@@ -165,34 +170,6 @@ func updateTable(db *sql.DB, table string) ([]string, error) {
 		}
 	}
 	return cmds, nil
-}
-
-func CheckTableEx(db *sql.DB, table interface{}) ([]string, error) {
-	if reflect.TypeOf(table).Kind() == reflect.String {
-		return checkTable(db, table.(string))
-	}
-	if t, has := tableCfgType[reflect.TypeOf(table)]; has {
-		return checkTable(db, t.name)
-	}
-	tlname, err := addTable(table)
-	if err != nil {
-		return nil, err
-	}
-	return checkTable(db, tlname)
-}
-
-func UpdateTableEx(db *sql.DB, table interface{}) ([]string, error) {
-	if reflect.TypeOf(table).Kind() == reflect.String {
-		return updateTable(db, table.(string))
-	}
-	if t, has := tableCfgType[reflect.TypeOf(table)]; has {
-		return updateTable(db, t.name)
-	}
-	tlname, err := addTable(table)
-	if err != nil {
-		return nil, err
-	}
-	return updateTable(db, tlname)
 }
 
 //db, err := sql.Open("mysql", "name:pwd@tcp(127.0.0.1:3306)/")

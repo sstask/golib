@@ -98,21 +98,16 @@ func replaceORinsertOne(db *sql.DB, table interface{}, cmd string) (sql.Result, 
 	if types.Kind() == reflect.Ptr && types.Elem().Kind() != reflect.Struct {
 		return nil, fmt.Errorf("you should give a struct or a ptr of a struct")
 	}
-	//rltype:the type of the struct tbVal:the value of the struct
-	rltype := types
+	//tbVal:the value of the struct
 	tbVal := reflect.ValueOf(table)
 	if types.Kind() == reflect.Ptr {
-		rltype = types.Elem()
 		tbVal = tbVal.Elem()
 	}
 	//read table config
-	if _, has := tableCfgType[rltype]; !has {
-		_, err := addTable(table)
-		if err != nil {
-			return nil, err
-		}
+	tbcfg, err := getTableConfig(table)
+	if err != nil {
+		return nil, err
 	}
-	tbcfg, _ := tableCfgType[rltype]
 	insertVals := make([]interface{}, 0, len(tbcfg.columns))
 	sqlcmd := cmd + " into " + tbcfg.name + " ("
 	sqlval := " values ("
@@ -150,18 +145,16 @@ func replaceORinsertBatch(db *sql.DB, table interface{}, cmd string) (sql.Result
 	if sliceval.Len() == 0 {
 		return nil, nil
 	}
-	//rltype:the type of the struct
-	rltype := reflect.TypeOf(sliceval.Index(0).Interface())
-	if rltype.Kind() == reflect.Ptr {
-		rltype = rltype.Elem()
+	//tbVal:the value of the struct
+	tbVal := reflect.ValueOf(table)
+	if types.Kind() == reflect.Ptr {
+		tbVal = tbVal.Elem()
 	}
-	if _, has := tableCfgType[rltype]; !has {
-		_, err := addTable(sliceval.Index(0).Interface())
-		if err != nil {
-			return nil, err
-		}
+	//read table config
+	tbcfg, err := getTableConfig(table)
+	if err != nil {
+		return nil, err
 	}
-	tbcfg, _ := tableCfgType[rltype]
 	insertVals := make([]interface{}, 0, len(tbcfg.columns)*sliceval.Len())
 	insertCols := make([]string, 0, len(tbcfg.columns))
 	sqlcmd := cmd + " into " + tbcfg.name + " ("
@@ -473,20 +466,16 @@ func UpdateRecordEx(db *sql.DB, table interface{}, args ...interface{}) (sql.Res
 		return nil, fmt.Errorf("you should give a struct or a ptr of a struct")
 	}
 	//rltype:the type of the struct tbVal:the value of the struct
-	rltype := types
+	//tbVal:the value of the struct
 	tbVal := reflect.ValueOf(table)
 	if types.Kind() == reflect.Ptr {
-		rltype = types.Elem()
 		tbVal = tbVal.Elem()
 	}
 	//read table config
-	if _, has := tableCfgType[rltype]; !has {
-		_, err := addTable(table)
-		if err != nil {
-			return nil, err
-		}
+	tbcfg, err := getTableConfig(table)
+	if err != nil {
+		return nil, err
 	}
-	tbcfg, _ := tableCfgType[rltype]
 	datas := make(map[string]interface{})
 	for k, v := range tbcfg.columns {
 		if !v.export || v.autoinc {

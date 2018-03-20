@@ -1,11 +1,11 @@
 package stmysql
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 //mysql table column description
@@ -30,22 +30,51 @@ type dbTable struct {
 	columns    map[string]dbColumn
 }
 
-var tableCfgType map[reflect.Type]dbTable = make(map[reflect.Type]dbTable)
-var tableCfgName map[string]dbTable = make(map[string]dbTable)
+var (
+	tableMutex   sync.RWMutex
+	tableCfgType map[reflect.Type]dbTable = make(map[reflect.Type]dbTable)
+	tableCfgName map[string]dbTable       = make(map[string]dbTable)
+)
 
-func addTable(table interface{}) (string, error) {
+func getTableConfigByName(table string) *dbTable {
+	tableMutex.RLock()
+	dbt, has := tableCfgName[table]
+	tableMutex.RUnlock()
+	if has {
+		return &dbt
+	}
+	return nil
+}
+
+func getTableConfig(table interface{}) (*dbTable, error) {
 	types := reflect.TypeOf(table)
+	if types.Kind() == reflect.String {
+		return getTableConfigByName(table.(string)), nil
+	}
+
 	var tbtype reflect.Type
 	if types.Kind() == reflect.Struct {
 		tbtype = types
 	} else if types.Kind() == reflect.Ptr && types.Elem().Kind() == reflect.Struct {
 		tbtype = types.Elem()
 	} else {
-		return "", errors.New("table should be a struct or a ptr of a struct")
+		return nil, fmt.Errorf("table should be a struct or a ptr of a struct")
 	}
-	if _, has := tableCfgType[tbtype]; has {
-		return tbtype.Name(), fmt.Errorf("table[%s] have be added", tbtype.Name())
+
+	tableMutex.RLock()
+	dbt, has := tableCfgType[tbtype]
+	tableMutex.RUnlock()
+	if has {
+		return &dbt, nil
 	}
+
+	tableMutex.Lock()
+	d, e := addTable(tbtype)
+	tableMutex.Unlock()
+	return d, e
+}
+
+func addTable(tbtype reflect.Type) (*dbTable, error) {
 	tbcfg := dbTable{
 		name:     tbtype.Name(),
 		typ:      tbtype,
@@ -114,7 +143,7 @@ func addTable(table interface{}) (string, error) {
 			if strings.HasPrefix(keys, "primary") {
 				keys = keys[len("primary"):]
 				if keys == "" || keys[0] != '(' {
-					return tbcfg.name, fmt.Errorf("table[%s] primary format error key:[%s]", tbtype.Name(), val.Get("key"))
+					return nil, fmt.Errorf("table[%s] primary format error key:[%s]", tbtype.Name(), val.Get("key"))
 				}
 				pos := 0
 				for ; pos < len(keys); pos++ {
@@ -123,7 +152,7 @@ func addTable(table interface{}) (string, error) {
 					}
 				}
 				if keys[pos] != ')' {
-					return tbcfg.name, fmt.Errorf("table[%s] primary format error key:[%s]", tbtype.Name(), val.Get("key"))
+					return nil, fmt.Errorf("table[%s] primary format error key:[%s]", tbtype.Name(), val.Get("key"))
 				}
 				tbcfg.primarykey = keys[:pos+1]
 				if len(keys) > pos+2 {
@@ -133,7 +162,7 @@ func addTable(table interface{}) (string, error) {
 			for strings.HasPrefix(keys, "index") {
 				keys = keys[len("index"):]
 				if keys == "" || keys[0] != '(' {
-					return tbcfg.name, fmt.Errorf("table[%s] index format error key:[%s]", tbtype.Name(), val.Get("key"))
+					return nil, fmt.Errorf("table[%s] index format error key:[%s]", tbtype.Name(), val.Get("key"))
 				}
 				pos := 0
 				for ; pos < len(keys); pos++ {
@@ -142,7 +171,7 @@ func addTable(table interface{}) (string, error) {
 					}
 				}
 				if keys[pos] != ')' {
-					return tbcfg.name, fmt.Errorf("table[%s] index format error key:[%s]", tbtype.Name(), val.Get("key"))
+					return nil, fmt.Errorf("table[%s] index format error key:[%s]", tbtype.Name(), val.Get("key"))
 				}
 				tbcfg.index = append(tbcfg.index, keys[:pos+1])
 				if len(keys) > pos+2 {
@@ -160,7 +189,7 @@ func addTable(table interface{}) (string, error) {
 			if len(res) >= 2 {
 				i, e := strconv.Atoi(res[1])
 				if e != nil {
-					return tbcfg.name, e
+					return nil, e
 				}
 				tbcfg.autoinci = uint32(i)
 			}
@@ -172,10 +201,10 @@ func addTable(table interface{}) (string, error) {
 			v.autoinc = true
 			tbcfg.columns[tbcfg.autoincc] = v
 		} else {
-			return tbcfg.name, fmt.Errorf("table[%s] autoinc format error autoinc:[%s]", tbcfg.name, tbcfg.autoincc)
+			return nil, fmt.Errorf("table[%s] autoinc format error autoinc:[%s]", tbcfg.name, tbcfg.autoincc)
 		}
 	}
 	tableCfgType[tbcfg.typ] = tbcfg
 	tableCfgName[tbcfg.name] = tbcfg
-	return tbcfg.name, nil
+	return &tbcfg, nil
 }
