@@ -23,7 +23,7 @@ type globalDBCfg struct {
 	st_double float64     `type:"DOUBLE(20)"`
 	st_string string      `type:"VARCHAR(255)"`
 	st_bytes  []byte      `type:"BLOB(65535)"`
-	st_time   time.Time   `type:"INT(10) UNSIGNED"`
+	st_time   time.Time   `type:"timestamp"`
 	st_others interface{} `type:"BLOB(65535)"`
 }
 

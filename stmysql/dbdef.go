@@ -1,5 +1,9 @@
 package stmysql
 
+import (
+	"time"
+)
+
 //in tag;
 //mysql:"IsExport,Engine,Charset" key:PrimaryKey(..),Index(..),Index... autoinc:"ColumnName,StartNum";
 //column:"IsExport,type";
@@ -7,9 +11,10 @@ package stmysql
 //these tags can be omited all;
 
 type dbTableDefine struct {
-	ID1  uint32 `mysql:"false,InnoDB,utf8" key:"primary(ID1,ID2),index(Name)" autoinc:"ID1,1"`
-	ID2  uint32 `column:"true,INT(10) UNSIGNED"`
-	Name string `column:"true,VARCHAR(255)"`
+	ID1         uint32    `mysql:"false,InnoDB,utf8" key:"primary(ID1,ID2),index(Name)" autoinc:"ID1,1"`
+	ID2         uint32    `column:"true,INT(10) UNSIGNED NOT NULL DEFAULT 0"`
+	Name        string    `column:"true,VARCHAR(255)"`
+	Update_time time.Time `column:"timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"`
 }
 
 /*

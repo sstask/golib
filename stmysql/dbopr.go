@@ -127,7 +127,7 @@ func checkTable(db *sql.DB, table string) ([]string, error) {
 				if !isfirst {
 					newstr += ",\n"
 				}
-				newstr += " ADD " + v.name + " " + v.typ + " NOT NULL"
+				newstr += " ADD " + v.name + " " + v.typ
 				isfirst = false
 			}
 			newstr += "\n;\n"
