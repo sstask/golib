@@ -1,5 +1,5 @@
 // ini.go
-package main
+package stconfig
 
 import (
 	"bufio"
