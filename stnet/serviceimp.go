@@ -83,8 +83,11 @@ func (service *ServiceHttp) Loop() {
 func (service *ServiceHttp) Destroy() {
 
 }
-func (service *ServiceHttp) RegisterSMessage(*Service) {
-
+func (service *ServiceHttp) HandleHttpReq(s *Session, msg interface{}) {
+	//req := msg.(*http.Request)
+}
+func (service *ServiceHttp) RegisterSMessage(s *Service) {
+	s.RegisterMessage(0, service.HandleHttpReq)
 }
 func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(data)))
@@ -128,8 +131,11 @@ func (service *ServiceSdp) Loop() {
 func (service *ServiceSdp) Destroy() {
 
 }
-func (service *ServiceSdp) RegisterSMessage(*Service) {
-
+func (service *ServiceSdp) HandleReqProto(s *Session, msg interface{}) {
+	//req := msg.(*ReqProto)
+}
+func (service *ServiceSdp) RegisterSMessage(s *Service) {
+	s.RegisterMessage(0, service.HandleReqProto)
 }
 func (service *ServiceSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
 	if len(data) < 4 {
@@ -159,8 +165,11 @@ func (service *ServiceSdp) HandleError(sess *Session, err error) {
 type ConnectSdp struct {
 }
 
-func (cs *ConnectSdp) RegisterCMessage(*Connect) {
-
+func (cs *ConnectSdp) HandleRspProto(s *Session, msg interface{}) {
+	//req := msg.(*ReqProto)
+}
+func (cs *ConnectSdp) RegisterCMessage(c *Connect) {
+	c.RegisterMessage(0, cs.HandleRspProto)
 }
 func (cs *ConnectSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
 	if len(data) < 4 {

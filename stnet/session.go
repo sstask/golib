@@ -195,7 +195,7 @@ func (s *Session) dorecv() {
 		bufLen := len(msgbuf)
 		if MinMsgSize < bufLen && n*2 < bufLen {
 			msgbuf = bp.Alloc(bufLen / 2)
-		} else {
+		} else if n == bufLen {
 			msgbuf = bp.Alloc(bufLen * 2)
 		}
 	}
