@@ -1,7 +1,7 @@
 stconfig is a simple lib for reading some config.
 example
 ```
-	strs, _ := ReadXls("xxx.xls", "sss")
+	strs, _ := ReadXlsx("xxx.xlsx", "sss")
 
 	node, _ := LoadXml("test.xml")
 	fmt.Println(node.FindNode("title").GetValI())
